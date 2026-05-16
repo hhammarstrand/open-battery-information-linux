@@ -34,7 +34,7 @@ Ensure you have the following installed on your system:
 2. Clone the repository using the command:
 
    ```bash
-   git clone https://github.com/mnh-jansson/open-battery-information.git
+   git clone https://github.com/hhammarstrand/open-battery-information-linux.git
    ```
 
 Or,

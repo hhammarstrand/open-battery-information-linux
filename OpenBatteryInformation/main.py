@@ -9,7 +9,7 @@ from components.default_module import DefaultModule
 class OBI(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("OBI-1")
+        self.title("OBI Linux")
         self.geometry("1270x720")
         self.set_icon("icon.png")
 
@@ -29,11 +29,8 @@ class OBI(tk.Tk):
         self.current_interface = None
 
     def set_icon(self, icon_path):
-        if hasattr(sys, '_MEIPASS'):
-            # When running from a PyInstaller bundle
-            icon_path = os.path.join(sys._MEIPASS, icon_path)
-
-        icon = tk.PhotoImage(file=icon_path)
+        resolved = self.get_resource_path(icon_path)
+        icon = tk.PhotoImage(file=resolved)
         self.iconphoto(False, icon)
 
     def setup_sidebar(self):
@@ -84,7 +81,7 @@ class OBI(tk.Tk):
         """ Get the absolute path to the resource, works for dev and for PyInstaller """
         if hasattr(sys, '_MEIPASS'):
             return os.path.join(sys._MEIPASS, relative_path)
-        return os.path.join(os.path.abspath("."), relative_path)
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), relative_path)
 
     def load_modules(self):
         modules_dir = self.get_resource_path('modules')

@@ -7,7 +7,7 @@ class DefaultModule(tk.Frame):
         self.create_widgets()
 
     def create_widgets(self):
-        label = tk.Label(self, text="Open Battery Information", font=('Helvetica', 16))
+        label = tk.Label(self, text="OBI Linux", font=('Helvetica', 16))
         label.pack(pady=20)
 
         message = tk.Label(self, text="Select a module from the sidebar to display its content.")

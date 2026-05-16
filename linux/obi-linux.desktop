@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=OBI Linux
+GenericName=Battery Diagnostics
+Comment=Tools and information about batteries to aid repair
+Exec=obi-linux
+Icon=obi-linux
+Terminal=false
+Categories=Utility;Electronics;HardwareSettings;
+Keywords=battery;BMS;makita;arduino;diagnostics;repair;
+StartupNotify=true
+StartupWMClass=OBI Linux

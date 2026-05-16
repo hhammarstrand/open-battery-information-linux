@@ -1,0 +1,24 @@
+# udev rules for common USB-to-serial adapters used with ArduinoOBI
+# Grants read/write access to all users in the "plugdev" group so that
+# the OBI Linux app can talk to the Arduino without sudo
+# and without forcing users into the "dialout" group.
+#
+# Install: sudo cp 90-arduino-obi.rules /etc/udev/rules.d/
+#          sudo udevadm control --reload-rules && sudo udevadm trigger
+#
+# Make sure your user is in the plugdev group:
+#          sudo usermod -aG plugdev $USER
+# (log out and back in for it to take effect)
+
+# Arduino Uno / Mega (16U2 / 8U2)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="2341", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+# Arduino SA
+SUBSYSTEM=="tty", ATTRS{idVendor}=="2a03", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+# FTDI FT232 (common on Arduino clones)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+# WCH CH340/CH341 (very common on Arduino Nano clones)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+# Silicon Labs CP210x
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+# Prolific PL2303
+SUBSYSTEM=="tty", ATTRS{idVendor}=="067b", MODE="0660", GROUP="plugdev", TAG+="uaccess"
