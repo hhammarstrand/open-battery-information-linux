@@ -59,10 +59,10 @@ class ModuleApplication(tk.Frame):
 
     def create_widgets(self):
         label = tk.Label(self, text=get_display_name(), font=('Helvetica', 16))
-        label.pack(pady=20)
+        label.pack(pady=(12, 8))
 
         columns_frame = tk.Frame(self)
-        columns_frame.pack(fill='both', padx=20, pady=10)
+        columns_frame.pack(fill='both', padx=20, pady=(0, 6))
 
         columns_frame.grid_columnconfigure(0, weight=1)
         column_frame = tk.LabelFrame(columns_frame, text="Read data")
@@ -115,10 +115,14 @@ class ModuleApplication(tk.Frame):
         tree_scroll_y = tk.Scrollbar(tree_frame, orient="vertical")
         tree_scroll_y.pack(side="right", fill="y")
 
+        # A small requested height on purpose: the table expands into
+        # whatever space is left, instead of demanding ten rows and pushing
+        # the logging panel and the debug pane off a 720 px window.
         self.tree = ttk.Treeview(
             tree_frame,
             columns=("Value"),
             yscrollcommand=tree_scroll_y.set,
+            height=6,
         )
 
         tree_scroll_y.config(command=self.tree.yview)

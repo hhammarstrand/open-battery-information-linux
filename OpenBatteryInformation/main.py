@@ -30,7 +30,9 @@ class OBI(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("OBI Linux")
-        self.geometry("1270x720")
+        # Slightly taller than upstream: the module view gained the logging
+        # panel, and this keeps the readings table usable without scrolling.
+        self.geometry("1270x820")
         self.minsize(900, 560)
         self.apply_scaling()
         self.set_icon("icon.png")
@@ -48,8 +50,12 @@ class OBI(tk.Tk):
         self._cleanup_callbacks = []
 
         self.setup_sidebar()
-        self.setup_main_window()
+        # The debug pane is packed before the main window and anchored to the
+        # bottom, so it keeps its space no matter how tall the selected
+        # module's view is. Packed the other way round, a tall module (the
+        # logging panel made Makita LXT taller) pushes it off screen.
         self.setup_debug_frame()
+        self.setup_main_window()
 
         self.default_module = DefaultModule(self.main_window)
         self.display_default_content()
@@ -133,8 +139,8 @@ class OBI(tk.Tk):
         self.main_window.pack(fill='both', expand=True, side='top')
 
     def setup_debug_frame(self):
-        debug_frame = tk.LabelFrame(self, text="Debug Information", padx=20, pady=20)
-        debug_frame.pack(fill='both', expand=False, side='top', padx=5, pady=5)
+        debug_frame = tk.LabelFrame(self, text="Debug Information", padx=20, pady=10)
+        debug_frame.pack(fill='x', expand=False, side='bottom', padx=5, pady=5)
 
         debug_scroll = tk.Scrollbar(debug_frame, orient="vertical")
         debug_scroll.pack(side="right", fill="y")
