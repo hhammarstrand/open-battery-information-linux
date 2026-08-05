@@ -4,6 +4,7 @@ from tkinter import ttk
 
 import serial
 
+from components.theme import PAD_M, PAD_S, PAD_XS
 from core import serial_ports
 from core.obi_link import ObiLink, ObiLinkError
 
@@ -12,7 +13,7 @@ def get_display_name():
     return "Arduino OBI"
 
 
-class Interface(tk.Frame):
+class Interface(ttk.Frame):
     """Sidebar widget for connecting to the ArduinoOBI adapter.
 
     The actual protocol lives in :class:`core.obi_link.ObiLink` so that the
@@ -20,10 +21,11 @@ class Interface(tk.Frame):
     """
 
     def __init__(self, parent, obi_instance):
-        super().__init__(parent)
+        super().__init__(parent, style="Card.TFrame")
         self.parent = parent
         self.obi_instance = obi_instance
         self.link = ObiLink(trace=self._trace)
+        self.firmware_version = None
         self._ports = []
         self.create_widgets()
 
@@ -31,28 +33,28 @@ class Interface(tk.Frame):
     # widgets
     # ------------------------------------------------------------------
     def create_widgets(self):
-        serial_label = tk.Label(self, text="Serial Port:")
-        serial_label.pack(pady=5)
+        ttk.Label(self, text="Serial port", style="CardCaption.TLabel").pack(
+            anchor="w", pady=(0, PAD_XS))
 
-        self.conf_port = ttk.Combobox(self, values=[], state="readonly", width=28)
-        self.conf_port.pack(pady=5)
+        self.conf_port = ttk.Combobox(self, values=[], state="readonly", width=24)
+        self.conf_port.pack(fill="x")
 
         self.show_all_var = tk.BooleanVar(value=False)
-        show_all = tk.Checkbutton(
-            self, text="Show non-USB ports", variable=self.show_all_var,
-            command=self.refresh_serial_list)
-        show_all.pack()
+        ttk.Checkbutton(self, text="Show non-USB ports", variable=self.show_all_var,
+                        style="Card.TCheckbutton",
+                        command=self.refresh_serial_list).pack(anchor="w", pady=(PAD_S, 0))
 
-        self.connect_button = tk.Button(self, text="Connect", command=self.toggle_connection)
-        self.connect_button.pack(pady=10)
-        self.connect_button.config(width=20)
+        self.connect_button = ttk.Button(self, text="Connect", style="Accent.TButton",
+                                         command=self.toggle_connection)
+        self.connect_button.pack(fill="x", pady=(PAD_M, PAD_S))
 
-        self.refresh_button = tk.Button(self, text="Refresh port list", command=self.refresh_serial_list)
-        self.refresh_button.pack(pady=10)
-        self.refresh_button.config(width=20)
+        self.refresh_button = ttk.Button(self, text="Refresh ports",
+                                         command=self.refresh_serial_list)
+        self.refresh_button.pack(fill="x")
 
-        self.version_label = tk.Label(self, anchor="w", width=20, text="Version:")
-        self.version_label.pack(pady=5)
+        self.version_label = ttk.Label(self, text="Not connected",
+                                       style="CardCaption.TLabel", anchor="w")
+        self.version_label.pack(anchor="w", fill="x", pady=(PAD_M, 0))
 
         self.refresh_serial_list(announce=False)
 
@@ -118,19 +120,22 @@ class Interface(tk.Frame):
             messagebox.showwarning(
                 "No port selected",
                 "Select the serial port your ArduinoOBI adapter is on.\n\n"
-                "If the list is empty, press 'Refresh port list' after plugging it in.")
+                "If the list is empty, press 'Refresh ports' after plugging it in.")
             return
 
         device = port.stable_device
         # Opening the port resets an Arduino, so this blocks for a couple of
         # seconds. Say so instead of just freezing the window.
-        self.connect_button.config(text="Connecting...", state="disabled")
+        self.connect_button.config(text="Connecting…", state="disabled")
+        self.version_label.config(text="Waiting for the adapter…",
+                                  style="CardCaption.TLabel")
         self.update_idletasks()
         try:
             self.link.open(device)
         except (serial.SerialException, ObiLinkError, OSError) as exc:
             self.link.close()
             self.connect_button.config(text="Connect", state="normal")
+            self.version_label.config(text="Not connected", style="CardCaption.TLabel")
             advice = serial_ports.diagnose(port.device, exc)
             for line in advice.splitlines():
                 self._trace(line)
@@ -140,7 +145,7 @@ class Interface(tk.Frame):
             self.connect_button.config(state="normal")
 
         self._trace("Opened serial port: %s" % device)
-        self.connect_button.config(text="Disconnect")
+        self.connect_button.config(text="Disconnect", style="TButton")
         self.update_version()
         self._notify("on_interface_connected")
 
@@ -148,8 +153,9 @@ class Interface(tk.Frame):
         if self.link.is_open:
             self.link.close()
             self._trace("Closed serial port")
-        self.connect_button.config(text="Connect")
-        self.version_label.config(text="Version:")
+        self.firmware_version = None
+        self.connect_button.config(text="Connect", style="Accent.TButton")
+        self.version_label.config(text="Not connected", style="CardCaption.TLabel")
         self._notify("on_interface_disconnected")
 
     def get_version(self):
@@ -160,9 +166,13 @@ class Interface(tk.Frame):
 
     def update_version(self):
         try:
-            self.version_label.config(text="Version: %s" % self.get_version())
+            self.firmware_version = self.get_version()
+            self.version_label.config(text="Adapter firmware %s" % self.firmware_version,
+                                      style="CardSuccess.TLabel")
         except Exception as exc:
-            self.version_label.config(text="Version: unknown")
+            self.firmware_version = None
+            self.version_label.config(text="Adapter did not answer",
+                                      style="CardError.TLabel")
             self._trace("Could not read adapter version: %s" % exc)
 
     # ------------------------------------------------------------------

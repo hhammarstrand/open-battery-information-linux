@@ -36,6 +36,7 @@ class GuiSmokeTest(unittest.TestCase):
 
     def test_window_and_plugins_load(self):
         self.assertEqual(self.app.title(), "OBI Linux")
+        self.assertIn(self.app.theme.name, ("light", "dark"))
         self.assertIn("Makita LXT", self.app.module_combobox["values"])
         self.assertIn("Arduino OBI", self.app.interface_combobox["values"])
 
@@ -108,6 +109,26 @@ class GuiSmokeTest(unittest.TestCase):
         # The newest line must survive the trimming.
         self.assertIn("line %d" % (main.DEBUG_MAX_LINES + 49),
                       self.app.debug_text.get("1.0", "end"))
+
+    def test_log_pane_is_collapsed_until_asked_for(self):
+        self.assertFalse(self.app.log_visible)
+        self.assertFalse(self.app.log_frame.winfo_ismapped())
+
+        self.app.toggle_log()
+        self.app.update()
+        self.assertTrue(self.app.log_visible)
+        self.assertTrue(self.app.log_frame.winfo_ismapped())
+        self.assertEqual(self.app.log_button.cget("text"), "Hide log")
+
+        self.app.toggle_log()
+        self.app.update()
+        self.assertFalse(self.app.log_frame.winfo_ismapped())
+
+    def test_status_bar_shows_the_last_message(self):
+        self.app.update_debug("connected to /dev/ttyUSB0")
+        self.app.update()
+
+        self.assertIn("/dev/ttyUSB0", self.app.status_label.cget("text"))
 
     def test_switching_modules_destroys_the_previous_view(self):
         self.app.module_var.set("Makita LXT")

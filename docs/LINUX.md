@@ -5,6 +5,7 @@ Debian**, using an ArduinoOBI adapter. Desktop app plus a command line logger
 for recording a pack over time.
 
 - [Install](#install)
+- [Appearance](#appearance)
 - [Serial port access](#serial-port-access)
 - [Running the app](#running-the-app)
 - [Logging over time](#logging-over-time)
@@ -58,6 +59,33 @@ python3 main.py
 
 ---
 
+## Appearance
+
+The interface follows the conventions of current desktop applications: a
+header bar, cards instead of framed group boxes, the system UI font, and a
+single accented primary action per view. The protocol log lives behind the
+**Show log** button in the header; the status bar always carries the last
+line.
+
+**Dark mode** follows the desktop:
+
+```bash
+gsettings get org.gnome.desktop.interface color-scheme   # what OBI reads
+OBI_THEME=dark obi-linux                                 # force it
+OBI_THEME=light obi-linux
+```
+
+Note what this is not: Tk draws its own widgets, so OBI does not load your GTK
+theme. The palette is a deliberate reimplementation of the Adwaita colours,
+which is why it sits comfortably next to GNOME applications without being one.
+Accent colour, icon theme and window decorations still come from your desktop
+only in as far as the window manager draws them.
+
+**Text scaling** is read from `org.gnome.desktop.interface text-scaling-factor`.
+Override it with `OBI_SCALING=1.5` on desktops that do not expose it.
+
+---
+
 ## Serial port access
 
 This is the part that trips people up on Linux. The adapter shows up as
@@ -94,10 +122,12 @@ GUI as root anyway.
 
 1. Plug in the adapter, put the battery on the contacts.
 2. Start *OBI Linux*.
-3. Sidebar → **Select Interface: Arduino OBI**, pick the port, press
-   **Connect**. The firmware version appears when the adapter answers.
-4. Sidebar → **Module Selection: Makita LXT**.
-5. **Read battery model**, then **Read battery data**.
+3. Sidebar → **Module: Makita LXT**.
+4. Sidebar → **Interface: Arduino OBI**, pick the serial port, press
+   **Connect**. The header bar turns to *Connected* with the adapter firmware
+   version once it answers.
+5. **Read model**, then **Read cell data**. The three headline readings show
+   pack voltage, cell spread and lock state; the table below has everything.
 
 The port dropdown hides built-in UARTs (`/dev/ttyS0` and friends) because they
 are never the adapter; tick *Show non-USB ports* if you need them. When
@@ -115,7 +145,7 @@ can be continued from the command line.
 Under the readings table there is a **Data logging (over time)** panel:
 
 - **Interval** - seconds between samples.
-- **Include state / charge count** - adds lock state, status code and charge
+- **Include state and charge count** - adds lock state, status code and charge
   count. Costs one extra round trip per sample.
 - **Format** - `csv` or `jsonl`.
 - **File** - defaults to a timestamped file in
@@ -214,7 +244,8 @@ Options: `--f0513` (the diagnostics-only command set), `--locked`,
 | "Invalid response: all bytes are 0xFF" | Adapter answers, battery does not | Reseat the pack; check the ONEWIRE contact |
 | Reads time out on a BL18xx F0513 pack | That command path is slow (~900 ms) | Raise the timeout: `OBI_TIMEOUT=3 obi-linux` |
 | Adapter disappears mid-log | USB re-enumeration | The link reconnects automatically; use a `/dev/serial/by-id/...` path |
-| Everything is tiny on a HiDPI screen | Tk ignores the desktop scale factor | `OBI_SCALING=1.5 obi-linux` |
+| Everything is tiny on a HiDPI screen | The desktop factor is unset or unreadable | `OBI_SCALING=1.5 obi-linux` |
+| The app stays light although the desktop is dark | No `gsettings`, or a desktop that does not publish the preference | `OBI_THEME=dark obi-linux` |
 
 Nothing here needs `sudo`. If a suggestion tells you to run OBI as root,
 ignore it and fix the permissions instead.
@@ -225,7 +256,8 @@ ignore it and fix the permissions instead.
 
 | Variable | Effect |
 | --- | --- |
-| `OBI_SCALING` | Tk scale factor for HiDPI displays, e.g. `1.5` |
+| `OBI_THEME` | `dark` or `light`, overriding the desktop colour scheme |
+| `OBI_SCALING` | Text scale factor for HiDPI displays, e.g. `1.5` |
 | `OBI_EXTRA_PORTS` | Extra serial devices for the picker, colon separated (pty, socat, RFC2217) |
 | `OBI_TIMEOUT` | Serial read timeout in seconds (default 2.0) |
 | `OBI_BOOT_DELAY` | Wait after opening the port for the board to boot (default 2.0; use 0 for native-USB boards) |

@@ -12,11 +12,20 @@ software says it is faulty.
 
 This is the problem we would like to solve!
 
-![screenshot](docs/images/obi-1.png)
+![OBI Linux](docs/images/obi-linux-light.png)
+
+<details>
+<summary>Dark mode (follows the desktop preference)</summary>
+
+![OBI Linux in dark mode](docs/images/obi-linux-dark.png)
+
+</details>
 
 > **About this fork.** Upstream ships Windows and macOS builds. This fork adds
-> first-class support for **Pop!_OS, Ubuntu, Linux Mint and Debian**, and adds
-> **logging a battery over time** to both the app and a new headless CLI.
+> first-class support for **Pop!_OS, Ubuntu, Linux Mint and Debian**, adds
+> **logging a battery over time** to both the app and a new headless CLI, and
+> rebuilds the interface to look like a current desktop application - including
+> a dark mode that follows the system setting.
 > See **[docs/LINUX.md](docs/LINUX.md)** for the full Linux guide.
 
 [upstream]: https://github.com/mnh-jansson/open-battery-information
@@ -49,8 +58,9 @@ are attached to tagged releases as well.
 
 ### 3. Read a battery
 
-Pick the interface and port in the sidebar, press **Connect**, choose the
-**Makita LXT** module, then **Read battery model** and **Read battery data**.
+Choose the **Makita LXT** module and the **Arduino OBI** interface in the
+sidebar, pick the port, press **Connect**, then **Read model** and **Read cell
+data**.
 
 ---
 
@@ -111,6 +121,12 @@ covered by tests that need no hardware (`make test`).
 
 ## What this fork changes
 
+- Interface rebuilt in the visual language current Linux desktops use: a header
+  bar, cards with hairline borders instead of 3D group boxes, an 8 px spacing
+  grid, the system font, one accented primary action, headline readings, and a
+  collapsible protocol log
+- Dark mode that follows `org.gnome.desktop.interface color-scheme`, plus
+  desktop text scaling; both overridable with `OBI_THEME` and `OBI_SCALING`
 - Linux packaging: PyInstaller specs, CI, `.desktop` entry, icon, installer
 - udev rules for Arduino/FTDI/CH340/CP210x/PL2303/ESP32, including telling
   ModemManager to leave the adapter alone

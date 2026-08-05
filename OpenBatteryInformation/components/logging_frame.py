@@ -19,6 +19,7 @@ from tkinter import filedialog
 from tkinter import messagebox
 from tkinter import ttk
 
+from components.theme import PAD_M, PAD_S, PAD_XS, Card
 from core import sampling
 
 #: Give up after this many failed samples in a row (battery pulled, adapter
@@ -27,14 +28,17 @@ STOP_AFTER_ERRORS = 10
 
 POLL_MS = 400
 
+DOT = "\u25cf"
 
-class LoggingFrame(tk.LabelFrame):
+
+class LoggingFrame(Card):
     def __init__(self, parent, prepare, prefix="obi", obi_instance=None,
                  text="Data logging (over time)"):
-        super().__init__(parent, text=text, padx=10, pady=10)
+        super().__init__(parent)
         self.prepare = prepare
         self.prefix = prefix
         self.obi_instance = obi_instance
+        self.heading_text = text
 
         self.logger = None
         self._events = queue.Queue()
@@ -47,46 +51,59 @@ class LoggingFrame(tk.LabelFrame):
     def _build(self):
         self.columnconfigure(1, weight=1)
 
-        controls = tk.Frame(self)
-        controls.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 6))
+        header = ttk.Frame(self, style="Card.TFrame")
+        header.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, PAD_S))
+        ttk.Label(header, text=self.heading_text,
+                  style="CardHeading.TLabel").pack(side="left")
 
-        tk.Label(controls, text="Interval (s):").pack(side="left")
+        controls = ttk.Frame(self, style="Card.TFrame")
+        controls.grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, PAD_S))
+
+        ttk.Label(controls, text="Every", style="Card.TLabel").pack(side="left")
         self.interval_var = tk.StringVar(value="10")
-        self.interval_spin = tk.Spinbox(
-            controls, from_=1, to=3600, width=6, textvariable=self.interval_var)
-        self.interval_spin.pack(side="left", padx=(4, 12))
+        self.interval_spin = ttk.Spinbox(controls, from_=1, to=3600, width=5,
+                                         textvariable=self.interval_var)
+        self.interval_spin.pack(side="left", padx=PAD_XS)
+        ttk.Label(controls, text="seconds", style="Card.TLabel").pack(
+            side="left", padx=(0, PAD_M))
 
         self.include_status_var = tk.BooleanVar(value=False)
-        self.status_check = tk.Checkbutton(
-            controls, text="Include state / charge count (slower)",
-            variable=self.include_status_var)
-        self.status_check.pack(side="left", padx=(0, 12))
+        self.status_check = ttk.Checkbutton(
+            controls, text="Include state and charge count",
+            variable=self.include_status_var, style="Card.TCheckbutton")
+        self.status_check.pack(side="left", padx=(0, PAD_M))
 
-        tk.Label(controls, text="Format:").pack(side="left")
+        ttk.Label(controls, text="Format", style="Card.TLabel").pack(side="left")
         self.format_var = tk.StringVar(value="csv")
-        self.format_box = ttk.Combobox(
-            controls, textvariable=self.format_var, values=["csv", "jsonl"],
-            state="readonly", width=6)
-        self.format_box.pack(side="left", padx=4)
+        self.format_box = ttk.Combobox(controls, textvariable=self.format_var,
+                                       values=["csv", "jsonl"], state="readonly",
+                                       width=7)
+        self.format_box.pack(side="left", padx=PAD_XS)
 
-        tk.Label(self, text="File:").grid(row=1, column=0, sticky="w")
+        ttk.Label(self, text="File", style="CardDim.TLabel").grid(
+            row=2, column=0, sticky="w", padx=(0, PAD_S))
         self.path_var = tk.StringVar(value="")
-        self.path_entry = tk.Entry(self, textvariable=self.path_var)
-        self.path_entry.grid(row=1, column=1, sticky="ew", padx=6)
+        self.path_entry = ttk.Entry(self, textvariable=self.path_var)
+        self.path_entry.grid(row=2, column=1, sticky="ew")
 
-        buttons = tk.Frame(self)
-        buttons.grid(row=1, column=2, sticky="e")
-        self.browse_button = tk.Button(buttons, text="Browse...", command=self.browse)
-        self.browse_button.pack(side="left", padx=2)
-        self.open_button = tk.Button(buttons, text="Open folder", command=self.open_folder)
-        self.open_button.pack(side="left", padx=2)
-        self.start_button = tk.Button(buttons, text="Start logging", width=14,
-                                      command=self.toggle)
-        self.start_button.pack(side="left", padx=2)
+        buttons = ttk.Frame(self, style="Card.TFrame")
+        buttons.grid(row=2, column=2, sticky="e", padx=(PAD_S, 0))
+        self.browse_button = ttk.Button(buttons, text="Browse…", command=self.browse)
+        self.browse_button.pack(side="left", padx=(0, PAD_XS))
+        self.open_button = ttk.Button(buttons, text="Open folder", command=self.open_folder)
+        self.open_button.pack(side="left", padx=(0, PAD_XS))
+        self.start_button = ttk.Button(buttons, text="Start logging", width=14,
+                                       style="Accent.TButton", command=self.toggle)
+        self.start_button.pack(side="left")
 
-        self.status_label = tk.Label(self, text="Idle. Logs are written to %s"
-                                     % sampling.log_dir(), anchor="w", justify="left")
-        self.status_label.grid(row=2, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        status = ttk.Frame(self, style="Card.TFrame")
+        status.grid(row=3, column=0, columnspan=3, sticky="w", pady=(PAD_S, 0))
+        self.status_dot = ttk.Label(status, text=DOT, style="CardDim.TLabel")
+        self.status_dot.pack(side="left", padx=(0, PAD_XS))
+        self.status_label = ttk.Label(
+            status, text="Idle. Logs are written to %s" % sampling.log_dir(),
+            style="CardDim.TLabel", anchor="w", justify="left")
+        self.status_label.pack(side="left")
 
     def _register_cleanup(self):
         register = getattr(self.obi_instance, "register_cleanup", None)
@@ -177,7 +194,7 @@ class LoggingFrame(tk.LabelFrame):
         self.logger = logger
         self.path_var.set(path)
         self._set_running(True)
-        self._status("Logging to %s ..." % os.path.basename(path))
+        self._status("Logging to %s …" % os.path.basename(path), "accent")
         self._debug("Started logging to %s (every %gs)" % (path, interval))
         self._schedule_poll()
 
@@ -190,7 +207,7 @@ class LoggingFrame(tk.LabelFrame):
         """
         logger = self.logger
         if logger is not None and logger.is_running:
-            self._status("Stopping ...")
+            self._status("Stopping …", "dim")
             logger.stop(wait=wait, timeout=timeout)
 
     # ------------------------------------------------------------------
@@ -224,9 +241,10 @@ class LoggingFrame(tk.LabelFrame):
                 "too-many-errors": "stopped after %d failed samples in a row" % STOP_AFTER_ERRORS,
                 "write-failed": "stopped, writing failed",
             }.get(finished.get("reason"), "stopped")
+            tone = "error" if finished.get("reason") in ("too-many-errors", "write-failed") else "dim"
             self._status("Log %s - %d samples, %d errors -> %s"
                          % (reason, finished["samples"], finished["errors"],
-                            os.path.basename(finished["path"])))
+                            os.path.basename(finished["path"])), tone)
             self._debug("Logging %s after %d samples (%d errors): %s"
                         % (reason, finished["samples"], finished["errors"], finished["path"]))
             self.logger = None
@@ -235,10 +253,26 @@ class LoggingFrame(tk.LabelFrame):
         if logger is not None and logger.is_running:
             text = "Logging to %s - %d samples, %d errors" % (
                 os.path.basename(logger.path), logger.samples, logger.errors)
+            tone = "accent"
             if logger.last_error:
                 text += "\nLast error: %s" % _shorten(logger.last_error, 90)
-            self._status(text)
+                tone = "warning"
+            self._status(text, tone)
             self._schedule_poll()
+
+    def _set_running(self, running):
+        if not self._alive():
+            return
+        state = "disabled" if running else "normal"
+        try:
+            self.start_button.config(text="Stop logging" if running else "Start logging",
+                                     style="TButton" if running else "Accent.TButton")
+            for widget in (self.interval_spin, self.status_check, self.path_entry,
+                           self.browse_button):
+                widget.config(state=state)
+            self.format_box.config(state="disabled" if running else "readonly")
+        except tk.TclError:  # pragma: no cover - teardown race
+            pass
 
     def _alive(self):
         """False once Tk has started tearing this frame down."""
@@ -247,26 +281,21 @@ class LoggingFrame(tk.LabelFrame):
         except tk.TclError:  # pragma: no cover - interpreter already gone
             return False
 
-    def _set_running(self, running):
-        if not self._alive():
-            return
-        state = "disabled" if running else "normal"
-        try:
-            self.start_button.config(text="Stop logging" if running else "Start logging")
-            for widget in (self.interval_spin, self.status_check, self.path_entry,
-                           self.browse_button):
-                widget.config(state=state)
-            self.format_box.config(state="disabled" if running else "readonly")
-        except tk.TclError:  # pragma: no cover - teardown race
-            pass
-
-    def _status(self, text):
+    def _status(self, text, tone="dim"):
         # Status updates during teardown (stopping a logger because the view
         # is being destroyed) must not raise out of the Tk callback.
         if not self._alive():
             return
+        styles = {
+            "dim": ("CardDim.TLabel", "CardDim.TLabel"),
+            "accent": ("CardAccent.TLabel", "CardDim.TLabel"),
+            "warning": ("CardWarning.TLabel", "CardDim.TLabel"),
+            "error": ("CardError.TLabel", "CardDim.TLabel"),
+        }
+        dot_style, text_style = styles.get(tone, styles["dim"])
         try:
-            self.status_label.config(text=text)
+            self.status_dot.config(style=dot_style)
+            self.status_label.config(text=text, style=text_style)
         except tk.TclError:  # pragma: no cover - teardown race
             pass
 

@@ -19,22 +19,26 @@ except ImportError:  # pragma: no cover - depends on the distro package set
         "The precompiled release binary bundles tkinter and does not need this.\n")
     raise SystemExit(1)
 
+from components import theme
 from components.default_module import DefaultModule
+from components.theme import PAD_L, PAD_M, PAD_S, PAD_XS, Card
 
 #: Keep the debug pane from growing without bound during long logging runs.
 DEBUG_MAX_LINES = 500
 DEBUG_POLL_MS = 200
 
+APP_NAME = "OBI Linux"
+APP_TAGLINE = "Battery diagnostics"
+
 
 class OBI(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("OBI Linux")
-        # Slightly taller than upstream: the module view gained the logging
-        # panel, and this keeps the readings table usable without scrolling.
-        self.geometry("1270x820")
-        self.minsize(900, 560)
-        self.apply_scaling()
+        self.title(APP_NAME)
+        self.geometry("1280x820")
+        self.minsize(960, 620)
+
+        self.theme = theme.apply_theme(self)
         self.set_icon("icon.png")
 
         self.main_app = None
@@ -49,13 +53,10 @@ class OBI(tk.Tk):
         self._closing = False
         self._cleanup_callbacks = []
 
-        self.setup_sidebar()
-        # The debug pane is packed before the main window and anchored to the
-        # bottom, so it keeps its space no matter how tall the selected
-        # module's view is. Packed the other way round, a tall module (the
-        # logging panel made Makita LXT taller) pushes it off screen.
-        self.setup_debug_frame()
-        self.setup_main_window()
+        self.setup_header()
+        self.setup_status_bar()
+        self.setup_log_pane()
+        self.setup_body()
 
         self.default_module = DefaultModule(self.main_window)
         self.display_default_content()
@@ -68,27 +69,6 @@ class OBI(tk.Tk):
     # ------------------------------------------------------------------
     # appearance
     # ------------------------------------------------------------------
-    def apply_scaling(self):
-        """Honour OBI_SCALING for HiDPI screens.
-
-        Tk does not follow the desktop's scale factor on Linux, and guessing
-        from the reported DPI does more harm than good on multi-monitor
-        setups, so this stays opt-in: OBI_SCALING=1.5 obi-linux
-        """
-        override = os.environ.get("OBI_SCALING")
-        if not override:
-            return
-        try:
-            factor = float(override)
-        except ValueError:
-            return
-        if factor <= 0:
-            return
-        try:
-            self.tk.call("tk", "scaling", factor)
-        except tk.TclError:  # pragma: no cover - depends on the Tk build
-            pass
-
     def set_icon(self, icon_path):
         resolved = self.get_resource_path(icon_path)
         try:
@@ -99,61 +79,146 @@ class OBI(tk.Tk):
         except tk.TclError as exc:
             self.update_debug("Could not load window icon %s: %s" % (resolved, exc))
 
+    def _separator(self, parent, side="top"):
+        colors = self.theme.colors
+        line = tk.Frame(parent, background=colors["border"],
+                        height=1 if side in ("top", "bottom") else 0,
+                        width=1 if side in ("left", "right") else 0)
+        line.pack(side=side, fill="x" if side in ("top", "bottom") else "y")
+        return line
+
     # ------------------------------------------------------------------
     # layout
     # ------------------------------------------------------------------
-    def setup_sidebar(self):
-        self.sidebar = tk.LabelFrame(self, text="Settings", width=200, padx=10, pady=10)
-        self.sidebar.pack(fill='y', side='left')
+    def setup_header(self):
+        """A header bar, the way current desktop applications are laid out.
+
+        Tk cannot draw client side decorations, so this sits below the window
+        manager's title bar rather than replacing it.
+        """
+        header = ttk.Frame(self, style="Header.TFrame", padding=(PAD_L, PAD_S))
+        header.pack(side="top", fill="x")
+
+        titles = ttk.Frame(header, style="Header.TFrame")
+        titles.pack(side="left")
+        ttk.Label(titles, text=APP_NAME, style="HeaderHeading.TLabel").pack(anchor="w")
+        self.subtitle_label = ttk.Label(titles, text=APP_TAGLINE,
+                                        style="HeaderCaption.TLabel")
+        self.subtitle_label.pack(anchor="w")
+
+        actions = ttk.Frame(header, style="Header.TFrame")
+        actions.pack(side="right")
+        self.log_button = ttk.Button(actions, text="Show log", style="Header.TButton",
+                                     command=self.toggle_log)
+        self.log_button.pack(side="right", padx=(PAD_M, 0))
+        self.connection_label = ttk.Label(actions, text="●  Not connected",
+                                          style="HeaderDim.TLabel")
+        self.connection_label.pack(side="right")
+
+        self._separator(self, side="top")
+
+    def setup_body(self):
+        body = self.body = ttk.Frame(self, style="Window.TFrame")
+        body.pack(side="top", fill="both", expand=True)
+
+        self.sidebar = ttk.Frame(body, style="Sidebar.TFrame", padding=PAD_M)
+        self.sidebar.pack(side="left", fill="y")
+        self._separator(body, side="left")
 
         self.setup_module_frame()
         self.setup_interface_frame()
 
+        self.main_window = ttk.Frame(body, style="Window.TFrame", padding=PAD_L)
+        self.main_window.pack(side="left", fill="both", expand=True)
+
     def setup_module_frame(self):
-        module_frame = tk.LabelFrame(self.sidebar, text="Module Selection", padx=10, pady=10)
-        module_frame.pack(fill='both', pady=10)
+        card = Card(self.sidebar)
+        card.pack(fill="x", pady=(0, PAD_M))
+        card.title("Module")
 
         self.module_var = tk.StringVar()
-        self.module_combobox = ttk.Combobox(module_frame, textvariable=self.module_var, width=20)
-        self.module_combobox.pack(fill='both', pady=10)
+        self.module_combobox = ttk.Combobox(card, textvariable=self.module_var,
+                                            state="readonly", width=24)
+        self.module_combobox.pack(fill="x")
 
         self.load_modules()
         self.module_combobox.bind("<<ComboboxSelected>>", self.display_module)
 
     def setup_interface_frame(self):
-        interface_frame = tk.LabelFrame(self.sidebar, text="Select Interface:", padx=10, pady=10)
-        interface_frame.pack(pady=10)
+        card = Card(self.sidebar)
+        card.pack(fill="both", expand=True)
+        card.title("Interface")
 
         self.interface_var = tk.StringVar()
-        self.interface_combobox = ttk.Combobox(interface_frame, textvariable=self.interface_var, width=25)
-        self.interface_combobox.pack(pady=10)
+        self.interface_combobox = ttk.Combobox(card, textvariable=self.interface_var,
+                                               state="readonly", width=24)
+        self.interface_combobox.pack(fill="x")
 
         self.load_interfaces()
         self.interface_combobox.bind("<<ComboboxSelected>>", self.display_interface_settings)
 
-        self.interface_wireframe = tk.Frame(interface_frame, padx=10, pady=10)
-        self.interface_wireframe.pack(fill='both', expand=True, pady=(20, 0))
+        self.interface_wireframe = ttk.Frame(card, style="Card.TFrame")
+        self.interface_wireframe.pack(fill="both", expand=True, pady=(PAD_M, 0))
 
-    def setup_main_window(self):
-        self.main_window = tk.Frame(self, padx=20, pady=20)
-        self.main_window.pack(fill='both', expand=True, side='top')
+    def setup_status_bar(self):
+        bar = ttk.Frame(self, style="Window.TFrame", padding=(PAD_L, PAD_XS))
+        bar.pack(side="bottom", fill="x")
+        self.status_label = ttk.Label(bar, text="Ready", style="WindowCaption.TLabel",
+                                      anchor="w")
+        self.status_label.pack(side="left", fill="x", expand=True)
+        self._separator(self, side="bottom")
 
-    def setup_debug_frame(self):
-        debug_frame = tk.LabelFrame(self, text="Debug Information", padx=20, pady=10)
-        debug_frame.pack(fill='x', expand=False, side='bottom', padx=5, pady=5)
+    def setup_log_pane(self):
+        """Protocol trace, collapsed by default.
 
-        debug_scroll = tk.Scrollbar(debug_frame, orient="vertical")
-        debug_scroll.pack(side="right", fill="y")
+        Progressive disclosure: the status bar carries the last line, and the
+        full trace is one click away when something needs diagnosing.
+        """
+        self.log_frame = ttk.Frame(self, style="Window.TFrame",
+                                   padding=(PAD_L, 0, PAD_L, PAD_S))
+        self.log_visible = False
 
-        self.debug_text = tk.Text(debug_frame, height=5, wrap='word',
-                                  yscrollcommand=debug_scroll.set)
-        self.debug_text.pack(fill='both', expand=True)
-        self.debug_text.config(state='disabled')
-        debug_scroll.config(command=self.debug_text.yview)
+        header = ttk.Frame(self.log_frame, style="Window.TFrame")
+        header.pack(fill="x", pady=(0, PAD_XS))
+        ttk.Label(header, text="Debug log", style="WindowCaption.TLabel").pack(side="left")
+        ttk.Button(header, text="Clear", style="Header.TButton",
+                   command=self.clear_debug).pack(side="right")
+
+        container = ttk.Frame(self.log_frame, style="Window.TFrame")
+        container.pack(fill="both", expand=True)
+
+        scroll = ttk.Scrollbar(container, orient="vertical")
+        scroll.pack(side="right", fill="y")
+
+        self.debug_text = tk.Text(container, height=8, wrap="none",
+                                  yscrollcommand=scroll.set)
+        self.theme.style_text(self.debug_text)
+        self.debug_text.pack(fill="both", expand=True)
+        self.debug_text.config(state="disabled")
+        scroll.config(command=self.debug_text.yview)
 
         for message in self._pending_debug:
             self._write_debug(message)
         self._pending_debug = []
+
+    def toggle_log(self):
+        if self.log_visible:
+            self.log_frame.pack_forget()
+            self.log_button.config(text="Show log")
+        else:
+            # 'before' puts the log ahead of the body in the packing order, so
+            # it gets its own height instead of being squeezed to nothing by
+            # the expanding content area.
+            self.log_frame.pack(side="bottom", fill="both", expand=False,
+                                before=self.body)
+            self.log_button.config(text="Hide log")
+            self.debug_text.see("end")
+        self.log_visible = not self.log_visible
+
+    def clear_debug(self):
+        self.debug_text.config(state="normal")
+        self.debug_text.delete("1.0", "end")
+        self.debug_text.config(state="disabled")
 
     # ------------------------------------------------------------------
     # module / interface discovery
@@ -215,6 +280,7 @@ class OBI(tk.Tk):
             self.clear_main_window()
             self.main_app = module_to_display.ModuleApplication(self.main_window, None, self)
             self.main_app.set_interface(self.current_interface)
+            self.subtitle_label.config(text=display_name)
 
     def display_interface_settings(self, event=None):
         display_name = self.interface_var.get()
@@ -231,22 +297,20 @@ class OBI(tk.Tk):
 
     def load_cached_module(self, module_name):
         if module_name not in self.loaded_modules:
-            module_to_display = self.import_module(f"modules.{module_name}")
+            module_to_display = self.import_module("modules.%s" % module_name)
             self.loaded_modules[module_name] = module_to_display
-            self.update_debug(f"Imported module: {module_name}")
+            self.update_debug("Imported module: %s" % module_name)
         else:
             module_to_display = self.loaded_modules[module_name]
-            self.update_debug(f"Using cached module: {module_name}")
         return module_to_display
 
     def load_cached_interface(self, interface_name):
         if interface_name not in self.loaded_interfaces:
-            interface_module = self.import_module(f"interfaces.{interface_name}")
+            interface_module = self.import_module("interfaces.%s" % interface_name)
             self.loaded_interfaces[interface_name] = interface_module
-            self.update_debug(f"Imported interface: {interface_name}")
+            self.update_debug("Imported interface: %s" % interface_name)
         else:
             interface_module = self.loaded_interfaces[interface_name]
-            self.update_debug(f"Using cached interface: {interface_name}")
         return interface_module
 
     def import_module(self, module_path):
@@ -260,9 +324,15 @@ class OBI(tk.Tk):
     # interface hooks
     # ------------------------------------------------------------------
     def on_interface_connected(self, interface):
+        version = getattr(interface, "firmware_version", None)
+        text = "●  Connected"
+        if version:
+            text += "  ·  firmware %s" % version
+        self.connection_label.config(text=text, style="HeaderSuccess.TLabel")
         self._forward_to_module("on_interface_connected", interface)
 
     def on_interface_disconnected(self, interface):
+        self.connection_label.config(text="●  Not connected", style="HeaderDim.TLabel")
         self._forward_to_module("on_interface_disconnected", interface)
 
     def _forward_to_module(self, hook, interface):
@@ -295,6 +365,18 @@ class OBI(tk.Tk):
         self._trim_debug()
         self.debug_text.see('end')
         self.debug_text.config(state='disabled')
+        self._show_status(message)
+
+    def _show_status(self, message):
+        if not hasattr(self, "status_label"):
+            return
+        line = " ".join(str(message).split())
+        if len(line) > 140:
+            line = line[:139] + "…"
+        try:
+            self.status_label.config(text=line)
+        except tk.TclError:  # pragma: no cover - teardown race
+            pass
 
     def _trim_debug(self):
         try:
@@ -375,6 +457,7 @@ def selftest():
 
     modules = list(app.module_combobox["values"])
     interfaces = list(app.interface_combobox["values"])
+    print("theme     : %s" % app.theme.name)
     print("modules   : %s" % (", ".join(modules) or "none"))
     print("interfaces: %s" % (", ".join(interfaces) or "none"))
 
@@ -422,7 +505,11 @@ def main(argv=None):
               "  obi-linux --selftest   check that the installation works\n"
               "  obi-linux --version    print the version\n\n"
               "Log a battery over time from the command line with obi-log.\n"
-              "Environment: OBI_SCALING, OBI_EXTRA_PORTS, OBI_TIMEOUT, OBI_BOOT_DELAY")
+              "Environment:\n"
+              "  OBI_THEME=dark|light   override the desktop colour scheme\n"
+              "  OBI_SCALING=1.5        override the desktop text scaling\n"
+              "  OBI_EXTRA_PORTS=...    extra serial devices for the picker\n"
+              "  OBI_TIMEOUT, OBI_BOOT_DELAY  serial timing")
         return 0
 
     OBI().mainloop()
