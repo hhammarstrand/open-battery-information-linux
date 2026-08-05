@@ -1,0 +1,61 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: OpenBatteryInformation
+
+jobs:
+  unit:
+    name: Unit tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Mint 21 / Ubuntu 22.04 ship 3.10, Ubuntu 24.04 and Mint 22 ship
+        # 3.12. (The code avoids 3.9+ only syntax so older distros work too,
+        # but GitHub's 24.04 runners cannot install those versions.)
+        python-version: ['3.10', '3.12']
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run tests
+      # GUI tests skip themselves when there is no display.
+      run: python -m unittest discover -s tests -t . -v
+
+  gui:
+    name: GUI and integration tests (Xvfb)
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3-tk xvfb
+
+    - name: Install Python dependencies
+      run: |
+        python3 -m pip install --upgrade pip
+        python3 -m pip install -r requirements.txt
+
+    - name: Run the full suite under a virtual display
+      run: xvfb-run -a python3 -m unittest discover -s tests -t . -v

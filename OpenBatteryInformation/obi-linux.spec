@@ -1,20 +1,29 @@
 # -*- mode: python ; coding: utf-8 -*-
-
+#
+# Desktop application for Linux. Produces a single self-contained executable
+# in dist/obi-linux that bundles Python, Tk and pyserial.
 
 a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
     datas=[
+        # Modules and interfaces are imported by name at runtime, so the
+        # directories have to exist on disk for pkgutil to scan them.
         ('modules', 'modules'),
         ('interfaces', 'interfaces'),
         ('icon.png', '.')
     ],
-    hiddenimports=['modules', 'interfaces', 'interfaces.arduino_obi', 'modules.makita_lxt'],
+    hiddenimports=[
+        'modules', 'modules.makita_lxt',
+        'interfaces', 'interfaces.arduino_obi',
+        'components', 'components.default_module', 'components.logging_frame',
+        'core', 'core.makita', 'core.obi_link', 'core.sampling', 'core.serial_ports',
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['tests', 'tools'],
     noarchive=False,
 )
 pyz = PYZ(a.pure)

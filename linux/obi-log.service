@@ -1,0 +1,33 @@
+# systemd user service for unattended battery logging.
+#
+# Install:
+#     mkdir -p ~/.config/systemd/user
+#     cp obi-log.service ~/.config/systemd/user/
+#     systemctl --user daemon-reload
+#     systemctl --user start obi-log
+#     journalctl --user -u obi-log -f
+#
+# Enable it at login (and make it survive logout):
+#     systemctl --user enable obi-log
+#     sudo loginctl enable-linger "$USER"
+#
+# Edit the ExecStart line below to match your adapter and interval. Use the
+# stable /dev/serial/by-id/... path (obi-log --list-ports prints it) so the
+# service keeps working after the adapter is replugged.
+
+[Unit]
+Description=OBI Linux battery logger
+After=default.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/obi-log --interval 60 --include-status --append \
+          --out %h/battery-log.csv
+Restart=on-failure
+RestartSec=30
+# The logger writes one line per sample; keep the journal tidy.
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

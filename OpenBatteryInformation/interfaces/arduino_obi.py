@@ -1,35 +1,51 @@
 import tkinter as tk
+from tkinter import messagebox
 from tkinter import ttk
-import serial
-import serial.tools.list_ports
 
-INTERFACE_VERSION_CMD   = [0x01, 0x00, 0x03, 0x01]
+import serial
+
+from core import serial_ports
+from core.obi_link import ObiLink, ObiLinkError
+
 
 def get_display_name():
     return "Arduino OBI"
 
+
 class Interface(tk.Frame):
+    """Sidebar widget for connecting to the ArduinoOBI adapter.
+
+    The actual protocol lives in :class:`core.obi_link.ObiLink` so that the
+    command line logger can talk to the same hardware without tkinter.
+    """
+
     def __init__(self, parent, obi_instance):
         super().__init__(parent)
         self.parent = parent
         self.obi_instance = obi_instance
-        self.serial = serial.Serial()
-        self.serial.timeout = 1
+        self.link = ObiLink(trace=self._trace)
+        self._ports = []
         self.create_widgets()
 
+    # ------------------------------------------------------------------
+    # widgets
+    # ------------------------------------------------------------------
     def create_widgets(self):
         serial_label = tk.Label(self, text="Serial Port:")
         serial_label.pack(pady=5)
 
-        ports = self.get_available_serial_ports()
-
-        self.conf_port = ttk.Combobox(self, values=ports, state="readonly")
+        self.conf_port = ttk.Combobox(self, values=[], state="readonly", width=28)
         self.conf_port.pack(pady=5)
+
+        self.show_all_var = tk.BooleanVar(value=False)
+        show_all = tk.Checkbutton(
+            self, text="Show non-USB ports", variable=self.show_all_var,
+            command=self.refresh_serial_list)
+        show_all.pack()
 
         self.connect_button = tk.Button(self, text="Connect", command=self.toggle_connection)
         self.connect_button.pack(pady=10)
         self.connect_button.config(width=20)
-
 
         self.refresh_button = tk.Button(self, text="Refresh port list", command=self.refresh_serial_list)
         self.refresh_button.pack(pady=10)
@@ -38,86 +54,136 @@ class Interface(tk.Frame):
         self.version_label = tk.Label(self, anchor="w", width=20, text="Version:")
         self.version_label.pack(pady=5)
 
-    def refresh_serial_list(self):
-        ports = self.get_available_serial_ports()
-        self.conf_port["values"] = ports
+        self.refresh_serial_list(announce=False)
 
+    # ------------------------------------------------------------------
+    # port discovery
+    # ------------------------------------------------------------------
+    def refresh_serial_list(self, announce=True):
+        previous = self.selected_port()
+        self._ports = serial_ports.list_ports(include_non_usb=self.show_all_var.get())
+        labels = [port.label for port in self._ports]
+        self.conf_port["values"] = labels
+
+        if previous:
+            for index, port in enumerate(self._ports):
+                if port.device == previous:
+                    self.conf_port.current(index)
+                    break
+            else:
+                self.conf_port.set("")
+        elif len(self._ports) == 1:
+            # Only one candidate: preselect it so the common case is one click.
+            self.conf_port.current(0)
+
+        if announce:
+            if labels:
+                self._trace("Found %d serial port(s)" % len(labels))
+            else:
+                self._trace("No USB serial adapters found. Check the cable, or enable "
+                            "'Show non-USB ports'.")
 
     def get_available_serial_ports(self):
-        ports = [port.device for port in serial.tools.list_ports.comports()]
-        return ports
+        """Kept for compatibility with code that inspects the interface."""
+        return [port.device for port in self._ports]
+
+    def selected_port(self):
+        info = self._selected_port_info()
+        return info.device if info else None
+
+    def _selected_port_info(self):
+        label = self.conf_port.get()
+        for port in self._ports:
+            if port.label == label:
+                return port
+        return None
+
+    # ------------------------------------------------------------------
+    # connection
+    # ------------------------------------------------------------------
+    @property
+    def is_connected(self):
+        return self.link.is_open
 
     def toggle_connection(self):
-        if self.serial.is_open:
+        if self.link.is_open:
             self.close_serial_port()
         else:
             self.open_serial_port()
 
     def open_serial_port(self):
-        selected_port = self.conf_port.get()
-        if not selected_port:
-            self.obi_instance.update_debug("No serial port selected. Please select a port from the dropdown.")
+        port = self._selected_port_info()
+        if port is None:
+            self._trace("No serial port selected. Please select a port from the dropdown.")
+            messagebox.showwarning(
+                "No port selected",
+                "Select the serial port your ArduinoOBI adapter is on.\n\n"
+                "If the list is empty, press 'Refresh port list' after plugging it in.")
             return
-        self.serial.port = selected_port
+
+        device = port.stable_device
+        # Opening the port resets an Arduino, so this blocks for a couple of
+        # seconds. Say so instead of just freezing the window.
+        self.connect_button.config(text="Connecting...", state="disabled")
+        self.update_idletasks()
         try:
-            self.serial.open()
-            self.update_version()
-            self.obi_instance.update_debug(f"Opened serial port: {selected_port}")
-            self.connect_button.config(text="Disconnect", command=self.close_serial_port)
-        except serial.SerialException as e:
-            self.serial.close()
-            self.obi_instance.update_debug(f"Error opening serial port {selected_port}: {e}. Check the port is not in use by another application.")
-        except Exception as e:
-            self.serial.close()
-            self.obi_instance.update_debug(f"Unexpected error opening serial port {selected_port}: {type(e).__name__}: {e}")
+            self.link.open(device)
+        except (serial.SerialException, ObiLinkError, OSError) as exc:
+            self.link.close()
+            self.connect_button.config(text="Connect", state="normal")
+            advice = serial_ports.diagnose(port.device, exc)
+            for line in advice.splitlines():
+                self._trace(line)
+            messagebox.showerror("Could not open %s" % port.device, advice)
+            return
+        finally:
+            self.connect_button.config(state="normal")
+
+        self._trace("Opened serial port: %s" % device)
+        self.connect_button.config(text="Disconnect")
+        self.update_version()
+        self._notify("on_interface_connected")
 
     def close_serial_port(self):
-        if self.serial.is_open:
-            self.serial.close()
-            self.obi_instance.update_debug("Closed serial port")
-            self.connect_button.config(text="Connect", command=self.open_serial_port)
+        if self.link.is_open:
+            self.link.close()
+            self._trace("Closed serial port")
+        self.connect_button.config(text="Connect")
+        self.version_label.config(text="Version:")
+        self._notify("on_interface_disconnected")
 
     def get_version(self):
-        response = self.request(INTERFACE_VERSION_CMD, max_attempts=5)
-        version_string = '.'.join(str(byte) for byte in response[2:])
-    
-        return version_string
-    
+        # Three attempts, not five: the boot wait in ObiLink.open() has
+        # already given the board time to start, and every failed attempt
+        # costs a full read timeout with the window unresponsive.
+        return self.link.get_version(max_attempts=3)
+
     def update_version(self):
-        self.version_label.config(text=f"Version: {self.get_version()}")
+        try:
+            self.version_label.config(text="Version: %s" % self.get_version())
+        except Exception as exc:
+            self.version_label.config(text="Version: unknown")
+            self._trace("Could not read adapter version: %s" % exc)
 
-    def request(self, request, max_attempts=2):
-        if not self.serial.is_open:
-            raise ConnectionError("Serial port is not open. Please connect to the Arduino first.")
+    # ------------------------------------------------------------------
+    def request(self, request, max_attempts=2, trace=True):
+        """Send a frame to the adapter. See :meth:`core.obi_link.ObiLink.request`."""
+        return self.link.request(request, max_attempts=max_attempts, trace=trace)
 
-        expected_length = request[2] + 2
-        for attempt in range(1, max_attempts + 1):
-            self.obi_instance.update_debug(f">> {' '.join(f'{x:02X}' for x in request[3:])}")
-            try:
-                self.serial.reset_input_buffer()
-                self.serial.write(request)
+    # ------------------------------------------------------------------
+    def _trace(self, message):
+        if self.obi_instance is not None:
+            self.obi_instance.update_debug(message)
 
-                response = self.serial.read(expected_length)
-                self.obi_instance.update_debug(f"<< {' '.join(f'{x:02X}' for x in response[2:])}")
-                if request[2] == 0:
-                    return
+    def _notify(self, hook):
+        app = self.obi_instance
+        callback = getattr(app, hook, None) if app is not None else None
+        if callable(callback):
+            callback(self)
 
-                if len(response) == 0:
-                    raise TimeoutError(f"No response received from Arduino (expected {expected_length} bytes). Check that a battery is connected.")
-
-                if len(response) != expected_length:
-                    raise ValueError(f"Incomplete response: received {len(response)} bytes, expected {expected_length}. The battery may not be seated correctly.")
-
-                if all(byte == 0xff for byte in response[2:]):
-                    raise ValueError("Invalid response: all bytes are 0xFF. The battery may not be communicating correctly.")
-
-                return response
-
-            except (TimeoutError, ValueError) as e:
-                self.obi_instance.update_debug(f"Attempt {attempt}/{max_attempts} failed: {e}")
-            except serial.SerialException as e:
-                self.obi_instance.update_debug(f"Attempt {attempt}/{max_attempts} serial error: {e}. The Arduino may have been disconnected.")
-            except Exception as e:
-                self.obi_instance.update_debug(f"Attempt {attempt}/{max_attempts} unexpected error: {type(e).__name__}: {e}")
-        raise ConnectionError(f"Failed to get a valid response after {max_attempts} attempts. Ensure the Arduino is connected and a battery is inserted.")
-
+    def destroy(self):
+        try:
+            self.link.close()
+        except Exception:  # pragma: no cover - teardown best effort
+            pass
+        super().destroy()

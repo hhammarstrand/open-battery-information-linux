@@ -1,4 +1,4 @@
-name: Package OBI Linux for Ubuntu/Pop!_OS
+name: Package OBI Linux for Ubuntu/Pop!_OS/Mint
 
 on:
   push:
@@ -9,6 +9,9 @@ on:
 
 jobs:
   build:
+    # Built on the oldest supported LTS on purpose: glibc is backwards
+    # compatible, so a binary built here runs on 22.04, 24.04, Mint 21/22 and
+    # Pop!_OS, while one built on 24.04 would not run on 22.04.
     runs-on: ubuntu-22.04
 
     steps:
@@ -22,7 +25,7 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y python3-tk tk-dev binutils
+        sudo apt-get install -y python3-tk tk-dev binutils xvfb
 
     - name: Install Python dependencies
       run: |
@@ -30,24 +33,42 @@ jobs:
         pip install pyinstaller
         pip install -r OpenBatteryInformation/requirements.txt
 
-    - name: Build with PyInstaller
-      run: |
-        cd OpenBatteryInformation
-        python -m PyInstaller obi-linux.spec
+    - name: Run tests
+      working-directory: OpenBatteryInformation
+      run: xvfb-run -a python -m unittest discover -s tests -t .
 
-    - name: Package binary with desktop integration
+    - name: Build the desktop application
+      working-directory: OpenBatteryInformation
+      run: python -m PyInstaller --noconfirm obi-linux.spec
+
+    - name: Build the command line logger
+      working-directory: OpenBatteryInformation
+      run: python -m PyInstaller --noconfirm obi-log.spec
+
+    - name: Check the built binaries
+      working-directory: OpenBatteryInformation
       run: |
-        cd OpenBatteryInformation
-        STAGE_NAME=obi-linux-pkg
-        STAGE="dist/$STAGE_NAME"
+        # Run from an unrelated directory: this catches bundling mistakes
+        # where the app only finds its modules next to the source tree.
+        cd "$(mktemp -d)"
+        "$GITHUB_WORKSPACE/OpenBatteryInformation/dist/obi-log" --version
+        "$GITHUB_WORKSPACE/OpenBatteryInformation/dist/obi-log" --list-ports || true
+        xvfb-run -a "$GITHUB_WORKSPACE/OpenBatteryInformation/dist/obi-linux" --selftest
+
+    - name: Assemble the release tarball
+      working-directory: OpenBatteryInformation
+      run: |
+        STAGE=dist/obi-linux-x86_64
         mkdir -p "$STAGE"
-        cp dist/obi-linux "$STAGE/obi-linux"
+        cp dist/obi-linux dist/obi-log "$STAGE/"
         cp icon.png "$STAGE/"
         cp ../linux/obi-linux.desktop "$STAGE/"
         cp ../linux/90-arduino-obi.rules "$STAGE/"
+        cp ../linux/obi-log.service "$STAGE/"
         cp ../linux/install.sh "$STAGE/"
-        chmod +x "$STAGE/install.sh" "$STAGE/obi-linux"
-        tar -C dist -czf dist/obi-linux-x86_64.tar.gz "$STAGE_NAME"
+        cp ../docs/LINUX.md "$STAGE/README.md"
+        chmod +x "$STAGE/install.sh" "$STAGE/obi-linux" "$STAGE/obi-log"
+        tar -C dist -czf dist/obi-linux-x86_64.tar.gz obi-linux-x86_64
 
     - name: Upload Application
       uses: actions/upload-artifact@v4

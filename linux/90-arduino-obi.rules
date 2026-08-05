@@ -1,24 +1,30 @@
-# udev rules for common USB-to-serial adapters used with ArduinoOBI
-# Grants read/write access to all users in the "plugdev" group so that
-# the OBI Linux app can talk to the Arduino without sudo
-# and without forcing users into the "dialout" group.
+# udev rules for the USB serial adapters used with ArduinoOBI / OBI Linux.
 #
-# Install: sudo cp 90-arduino-obi.rules /etc/udev/rules.d/
-#          sudo udevadm control --reload-rules && sudo udevadm trigger
+# Two things happen here:
+#   1. The device is made read/write for the "plugdev" group and for the user
+#      logged in at the seat (TAG+="uaccess"), so OBI does not need sudo.
+#   2. ModemManager is told to keep its hands off. On Ubuntu, Pop!_OS and Mint
+#      it probes every new tty with AT commands for several seconds, which
+#      corrupts the first commands OBI sends and looks like a broken adapter.
 #
-# Make sure your user is in the plugdev group:
-#          sudo usermod -aG plugdev $USER
-# (log out and back in for it to take effect)
+# Install:
+#     sudo cp 90-arduino-obi.rules /etc/udev/rules.d/
+#     sudo udevadm control --reload-rules && sudo udevadm trigger
+#     sudo usermod -aG plugdev $USER      # then log out and back in
+#
+# (linux/install.sh does all of the above for you.)
 
 # Arduino Uno / Mega (16U2 / 8U2)
-SUBSYSTEM=="tty", ATTRS{idVendor}=="2341", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="2341", MODE="0660", GROUP="plugdev", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1", ENV{ID_MM_PORT_IGNORE}="1"
 # Arduino SA
-SUBSYSTEM=="tty", ATTRS{idVendor}=="2a03", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="2a03", MODE="0660", GROUP="plugdev", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1", ENV{ID_MM_PORT_IGNORE}="1"
 # FTDI FT232 (common on Arduino clones)
-SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", MODE="0660", GROUP="plugdev", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1", ENV{ID_MM_PORT_IGNORE}="1"
 # WCH CH340/CH341 (very common on Arduino Nano clones)
-SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", MODE="0660", GROUP="plugdev", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1", ENV{ID_MM_PORT_IGNORE}="1"
 # Silicon Labs CP210x
-SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", MODE="0660", GROUP="plugdev", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1", ENV{ID_MM_PORT_IGNORE}="1"
 # Prolific PL2303
-SUBSYSTEM=="tty", ATTRS{idVendor}=="067b", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="067b", MODE="0660", GROUP="plugdev", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1", ENV{ID_MM_PORT_IGNORE}="1"
+# Espressif native USB (ESP32-C3/S3 boards running the ESP build of ArduinoOBI)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", MODE="0660", GROUP="plugdev", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1", ENV{ID_MM_PORT_IGNORE}="1"

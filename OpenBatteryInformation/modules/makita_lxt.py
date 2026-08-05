@@ -1,36 +1,18 @@
-from tkinter import ttk
-from tkinter import messagebox
 import tkinter as tk
-import time
+from tkinter import messagebox
+from tkinter import ttk
+
+from components.logging_frame import LoggingFrame
+from core import makita
+from core.makita import MakitaClient
+
 
 def get_display_name():
     return "Makita LXT"
 
-# Command Definitions
-MODEL_CMD           = [0x01, 0x02, 0x10, 0xCC, 0xDC, 0x0C]
-READ_DATA_REQUEST   = [0x01, 0x04, 0x1D, 0xCC, 0xD7, 0x00, 0x00, 0xFF]
-TESTMODE_CMD        = [0x01, 0x03, 0x09, 0x33, 0xD9, 0x96, 0xA5]
-LEDS_ON_CMD         = [0x01, 0x02, 0x09, 0x33, 0xDA, 0x31]
-LEDS_OFF_CMD        = [0x01, 0x02, 0x09, 0x33, 0xDA, 0x34]
-RESET_ERROR_CMD     = [0x01, 0x02, 0x09, 0x33, 0xDA, 0x04]
-ROMID_CHARGER_CMD   = [0x01, 0x02, 0x28, 0x33, 0xF0, 0x00]
-CHARGER_CMD         = [0x01, 0x02, 0x20, 0xCC, 0xF0, 0x00]
-READ_MSG_CMD        = [0x01, 0x02, 0x28, 0x33, 0xAA, 0x00]
-CLEAR_CMD           = [0x01, 0x02, 0x00, 0xCC, 0xF0, 0x00]
-STORE_CMD           = [0x01, 0x02, 0x00, 0x33, 0x55, 0xA5]
-CLEAN_FRAME_CMD     = [0x01, 0x22, 0x00, 0x33, 0x33, 0x0F, 0x00, 0xF1, 0x26, 0xBD, 0x13, 0x14, 0x58, 0x00, 0x00, 0x94, 0x94, 0x40, 0x21, 0xD0, 0x80, 0x02, 0x4E, 0x23, 0xD0, 0x8E, 0x45, 0x60, 0x1A, 0x00, 0x03, 0x02, 0x02, 0x0E, 0x20, 0x00, 0x30, 0x01, 0x83]
 
-
-# Commands specific to the F0513 version
-F0513_VCELL_1_CMD   = [0x01, 0x01, 0x02, 0xCC, 0x31]
-F0513_VCELL_2_CMD   = [0x01, 0x01, 0x02, 0xCC, 0x32]
-F0513_VCELL_3_CMD   = [0x01, 0x01, 0x02, 0xCC, 0x33]
-F0513_VCELL_4_CMD   = [0x01, 0x01, 0x02, 0xCC, 0x34]
-F0513_VCELL_5_CMD   = [0x01, 0x01, 0x02, 0xCC, 0x35]
-F0513_TEMP_CMD      = [0x01, 0x01, 0x02, 0xCC, 0x52]
-F0513_MODEL_CMD     = [0x01, 0x00, 0x02, 0x31]
-F0513_VERSION_CMD   = [0x01, 0x00, 0x02, 0x32]
-F0513_TESTMODE_CMD  = [0x01, 0x01, 0x00, 0xCC, 0x99]
+NO_INTERFACE_MESSAGE = ("No interface selected. Please select and connect an interface "
+                        "from the sidebar.")
 
 initial_data = {
     "Model": "",
@@ -53,6 +35,7 @@ initial_data = {
     "Battery type": "",
 }
 
+
 class ModuleApplication(tk.Frame):
     def __init__(self, parent, interface_module=None, obi_instance=None):
         super().__init__(parent)
@@ -60,19 +43,26 @@ class ModuleApplication(tk.Frame):
         self.interface = None
         self.interface_module = interface_module
         self.obi_instance = obi_instance
-        self.command_version = None
+        self.client = None
         self.battery_present = False
         self.create_widgets()
 
+    # ------------------------------------------------------------------
     def set_interface(self, interface_instance):
         self.interface = interface_instance
+        self.client = MakitaClient(interface_instance) if interface_instance else None
+
+    @property
+    def command_version(self):
+        """Detected command set: ``""`` (standard), ``"F0513"`` or ``None``."""
+        return self.client.command_version if self.client else None
 
     def create_widgets(self):
         label = tk.Label(self, text=get_display_name(), font=('Helvetica', 16))
         label.pack(pady=20)
 
         columns_frame = tk.Frame(self)
-        columns_frame.pack(fill='both', expand=True, padx=20, pady=10)
+        columns_frame.pack(fill='both', padx=20, pady=10)
 
         columns_frame.grid_columnconfigure(0, weight=1)
         column_frame = tk.LabelFrame(columns_frame, text="Read data")
@@ -120,17 +110,17 @@ class ModuleApplication(tk.Frame):
         self.buttons.append(button6)
 
         tree_frame = tk.Frame(self)
-        tree_frame.pack(pady=20, padx=20, fill='both', expand=True)
+        tree_frame.pack(pady=10, padx=20, fill='both', expand=True)
 
         tree_scroll_y = tk.Scrollbar(tree_frame, orient="vertical")
         tree_scroll_y.pack(side="right", fill="y")
 
         self.tree = ttk.Treeview(
-            tree_frame, 
-            columns=("Value"), 
+            tree_frame,
+            columns=("Value"),
             yscrollcommand=tree_scroll_y.set,
         )
-        
+
         tree_scroll_y.config(command=self.tree.yview)
 
         self.tree.heading("#0", text="Parameter")
@@ -142,7 +132,7 @@ class ModuleApplication(tk.Frame):
         self.tree.pack(pady=1, padx=1, fill='both', expand=True)
 
         button_frame = tk.Frame(self)
-        button_frame.pack(pady=1, padx=1, anchor='center')
+        button_frame.pack(pady=4, padx=1, anchor='center')
 
         copy_button = tk.Button(button_frame, text="Copy", command=self.copy_to_clipboard)
         copy_button.pack(side="left", padx=5)
@@ -150,7 +140,10 @@ class ModuleApplication(tk.Frame):
         clear_button = tk.Button(button_frame, text="Clear", command=self.clear_data)
         clear_button.pack(side="left", padx=5)
 
-        button_frame.pack(expand=True)
+        self.logging_frame = LoggingFrame(
+            self, self.prepare_logging, prefix="makita-lxt",
+            obi_instance=self.obi_instance)
+        self.logging_frame.pack(fill='x', padx=20, pady=(6, 10))
 
         self.pack(fill='both', expand=True)
 
@@ -160,217 +153,184 @@ class ModuleApplication(tk.Frame):
         """Enable all buttons."""
         for button in self.buttons:
             button.config(state=tk.NORMAL)
-    
-    def get_model(self):
-        try:
-            response = self.interface.request(MODEL_CMD)
-            model = response[2:9].decode('utf-8')
-            self.enable_all_buttons()
-            self.command_version = ""
-            return model
-        except Exception as e:
-            raise e
 
-    def get_f0513_model(self):
-        try:
-            # This is currently handled in the interface as there were timing issues. TODO
-            #self.interface.request(F0513_TESTMODE_CMD)
-            response = self.interface.request(F0513_MODEL_CMD)
-            self.interface.request(CLEAR_CMD)
-            self.command_version = "F0513"
-            messagebox.showwarning("Limited", "This model only supports diagnostics")
-            self.buttons[1].config(state=tk.NORMAL)
-            return (f"BL{response[2]:X}{response[3]:X}")
-        except Exception as e:
-            raise e
-    def nibble_swap(self, byte):
-        upper_nibble = (byte & 0xF0) >> 4  # Extract the upper nibble and shift right by 4 bits
-        lower_nibble = (byte & 0x0F) << 4  # Extract the lower nibble and shift left by 4 bits
-        swapped_byte = upper_nibble | lower_nibble  # Combine the nibbles
-        return swapped_byte
+    # ------------------------------------------------------------------
+    # reading
+    # ------------------------------------------------------------------
+    def _check_interface(self):
+        if not self.interface or not self.client:
+            messagebox.showerror("Error", NO_INTERFACE_MESSAGE)
+            return False
+        return True
 
     def on_read_static_click(self):
-        commands = [self.get_model, self.get_f0513_model]
-
-        if not self.interface:
-            tk.messagebox.showerror("Error", "No interface selected. Please select and connect an interface from the sidebar.")
+        if not self._check_interface():
             return
+
         try:
-            response = self.interface.request(READ_MSG_CMD)
-            rom_id = ' '.join(f'{byte:02X}' for byte in response[2:10])
-            raw_msg = ' '.join(f'{byte:02X}' for byte in response[10:42])
-            swapped_bytes = bytearray([self.nibble_swap(response[37]), self.nibble_swap(response[36])])[::-1]
-            charge_count = int.from_bytes(swapped_bytes, byteorder='big')
-            charge_count = charge_count & 0x0FFF
-            lock_nibble = response[30] & 0x0F
-            error_byte = response[29]
-            if lock_nibble > 0:
-                lock_status = "LOCKED"
-            else:
-                lock_status = "UNLOCKED"
-            data = {"ROM ID": rom_id,
-                    "Battery message": raw_msg,
-                    "Charge count*": charge_count,
-                    "State": lock_status,
-                    "Status code": f'{error_byte:02X}',
-                    "Manufacturing date": f'{response[4]:02}/{response[3]:02}/20{response[2]:02}',
-                    "Capacity": f'{self.nibble_swap(response[26])/10}Ah',
-                    "Battery type": self.nibble_swap(response[21]),
-            }
-            self.insert_battery_data(data)
+            message = self.client.read_message()
+            self.insert_battery_data({
+                "ROM ID": message["rom_id"],
+                "Battery message": message["battery_message"],
+                "Charge count*": message["charge_count"],
+                "State": message["state"],
+                "Status code": message["status_code"],
+                "Manufacturing date": message["manufacturing_date"],
+                "Capacity": "%sAh" % message["capacity_ah"],
+                "Battery type": message["battery_type"],
+            })
             self.battery_present = True
         except ConnectionError as e:
-            tk.messagebox.showerror("Connection Error", f"Could not communicate with the battery:\n\n{e}")
+            messagebox.showerror("Connection Error",
+                                 "Could not communicate with the battery:\n\n%s" % e)
             return
         except (IndexError, ValueError) as e:
-            tk.messagebox.showerror("Data Error", f"Received an unexpected response while reading battery info:\n\n{type(e).__name__}: {e}")
+            messagebox.showerror("Data Error",
+                                 "Received an unexpected response while reading battery info:"
+                                 "\n\n%s: %s" % (type(e).__name__, e))
             return
         except Exception as e:
-            tk.messagebox.showerror("Error", f"Failed to read battery static data:\n\n{type(e).__name__}: {e}")
+            messagebox.showerror("Error", "Failed to read battery static data:\n\n%s: %s"
+                                 % (type(e).__name__, e))
             return
 
-        for command in commands:
+        try:
+            model, version = self.client.detect_model()
+        except Exception as e:
+            messagebox.showerror("Unsupported Battery", str(e))
+            return
 
-            try:
-                model = command()
+        if version == makita.F0513:
+            messagebox.showwarning("Limited", "This model only supports diagnostics")
+            self.buttons[1].config(state=tk.NORMAL)
+        else:
+            self.enable_all_buttons()
 
-                data = {"Model": model}
-                self.insert_battery_data(data)
-                return
-
-            except Exception as e:
-                last_exception = e
-
-        tk.messagebox.showerror("Unsupported Battery", f"Battery is present but the model is not supported.\n\nLast error: {last_exception}")
+        self.insert_battery_data({"Model": model})
 
     def on_read_data_click(self):
-        if not self.interface:
-            tk.messagebox.showerror("Error", "No interface selected. Please select and connect an interface from the sidebar.")
+        if not self._check_interface():
             return
 
         try:
-            if self.command_version == 'F0513':
-                self.interface.request(CLEAR_CMD)
-                self.interface.request(CLEAR_CMD)
-                cell1 = self.interface.request(F0513_VCELL_1_CMD)
-                cell2 = self.interface.request(F0513_VCELL_2_CMD)
-                cell3 = self.interface.request(F0513_VCELL_3_CMD)
-                cell4 = self.interface.request(F0513_VCELL_4_CMD)
-                cell5 = self.interface.request(F0513_VCELL_5_CMD)
-                temp = self.interface.request(F0513_TEMP_CMD)
-                v_cell1 = int.from_bytes(cell1[2:4], byteorder='little') / 1000
-                v_cell2 = int.from_bytes(cell2[2:4], byteorder='little') / 1000
-                v_cell3 = int.from_bytes(cell3[2:4], byteorder='little') / 1000
-                v_cell4 = int.from_bytes(cell4[2:4], byteorder='little') / 1000
-                v_cell5 = int.from_bytes(cell5[2:4], byteorder='little') / 1000
-                voltages = [v_cell1,v_cell2,v_cell3,v_cell4,v_cell5]
-                v_pack = sum(voltages)
-                v_diff = round(max(voltages) - min(voltages), 2)
-                t_cell = int.from_bytes(temp[2:4], byteorder='little') / 100
-                t_mosfet = ""
-            else:
-                response = self.interface.request(READ_DATA_REQUEST)
-                v_pack = int.from_bytes(response[2:4], byteorder='little') / 1000
-                v_cell1 = int.from_bytes(response[4:6], byteorder='little') / 1000
-                v_cell2 = int.from_bytes(response[6:8], byteorder='little') / 1000
-                v_cell3 = int.from_bytes(response[8:10], byteorder='little') / 1000
-                v_cell4 = int.from_bytes(response[10:12], byteorder='little') / 1000
-                v_cell5 = int.from_bytes(response[12:14], byteorder='little') / 1000
-                voltages = [v_cell1,v_cell2,v_cell3,v_cell4,v_cell5]
-                v_diff = round(max(voltages) - min(voltages), 2)
-                t_cell = int.from_bytes(response[16:18], byteorder='little') / 100
-                t_mosfet = int.from_bytes(response[18:20], byteorder='little') / 100
-
-            battery_data = {
-                "Pack Voltage": v_pack,
-                "Cell 1 Voltage": v_cell1,
-                "Cell 2 Voltage": v_cell2,
-                "Cell 3 Voltage": v_cell3,
-                "Cell 4 Voltage": v_cell4,
-                "Cell 5 Voltage": v_cell5,
-                "Cell Voltage Difference": v_diff,
-                "Temperature Sensor 1": t_cell,
-                "Temperature Sensor 2": t_mosfet
-            }
-
-            self.insert_battery_data(battery_data)
-
+            data = self.client.read_pack_data()
+            self.insert_battery_data({
+                "Pack Voltage": data["pack_v"],
+                "Cell 1 Voltage": data["cell1_v"],
+                "Cell 2 Voltage": data["cell2_v"],
+                "Cell 3 Voltage": data["cell3_v"],
+                "Cell 4 Voltage": data["cell4_v"],
+                "Cell 5 Voltage": data["cell5_v"],
+                "Cell Voltage Difference": data["cell_delta_v"],
+                "Temperature Sensor 1": data["temp1_c"],
+                "Temperature Sensor 2": "" if data["temp2_c"] is None else data["temp2_c"],
+            })
         except ConnectionError as e:
-            tk.messagebox.showerror("Connection Error", f"Lost communication while reading battery data:\n\n{e}")
+            messagebox.showerror("Connection Error",
+                                 "Lost communication while reading battery data:\n\n%s" % e)
         except (IndexError, ValueError) as e:
-            tk.messagebox.showerror("Data Error", f"Received an unexpected response while reading battery data:\n\n{type(e).__name__}: {e}")
+            messagebox.showerror("Data Error",
+                                 "Received an unexpected response while reading battery data:"
+                                 "\n\n%s: %s" % (type(e).__name__, e))
         except Exception as e:
-            tk.messagebox.showerror("Error", f"Failed to read battery data:\n\n{type(e).__name__}: {e}")
+            messagebox.showerror("Error", "Failed to read battery data:\n\n%s: %s"
+                                 % (type(e).__name__, e))
 
+    # ------------------------------------------------------------------
+    # logging
+    # ------------------------------------------------------------------
+    def prepare_logging(self, options):
+        """Validate state and hand the logger a sampling function.
+
+        Called from :class:`components.logging_frame.LoggingFrame` when the
+        user presses "Start logging".
+        """
+        if not self.interface or not self.client:
+            raise RuntimeError(NO_INTERFACE_MESSAGE)
+        if not getattr(self.interface, "is_connected", True):
+            raise RuntimeError("Connect to the adapter first: pick the serial port in the "
+                               "sidebar and press Connect.")
+
+        client = self.client
+        try:
+            if client.command_version is None:
+                client.detect_model()
+            if client.rom_id is None:
+                client.read_message()
+        except ConnectionError as exc:
+            raise RuntimeError("Could not talk to the battery:\n\n%s" % exc)
+        except Exception as exc:
+            raise RuntimeError("Could not identify the battery:\n\n%s: %s"
+                               % (type(exc).__name__, exc))
+
+        include_status = bool(options.get("include_status"))
+        fieldnames = makita.log_fieldnames(include_status)
+
+        def sample():
+            return client.sample(include_status=include_status, trace=False)
+
+        return fieldnames, sample
+
+    # ------------------------------------------------------------------
+    # function test / reset
+    # ------------------------------------------------------------------
     def on_all_leds_on_click(self):
-        if not self.interface:
-            tk.messagebox.showerror("Error", "No interface selected. Please select and connect an interface from the sidebar.")
+        if not self._check_interface():
             return
 
         try:
-            self.interface.request(TESTMODE_CMD)
-            self.interface.request(LEDS_ON_CMD)
-
+            self.interface.request(makita.TESTMODE_CMD)
+            self.interface.request(makita.LEDS_ON_CMD)
         except ConnectionError as e:
-            tk.messagebox.showerror("Connection Error", f"Lost communication while turning LEDs on:\n\n{e}")
+            messagebox.showerror("Connection Error",
+                                 "Lost communication while turning LEDs on:\n\n%s" % e)
         except Exception as e:
-            tk.messagebox.showerror("Error", f"Failed to turn LEDs on:\n\n{type(e).__name__}: {e}")
+            messagebox.showerror("Error", "Failed to turn LEDs on:\n\n%s: %s"
+                                 % (type(e).__name__, e))
 
     def on_all_leds_off_click(self):
-        if not self.interface:
-            tk.messagebox.showerror("Error", "No interface selected. Please select and connect an interface from the sidebar.")
+        if not self._check_interface():
             return
 
         try:
-            if self.command_version == 'F0513':
-                self.interface.request(F0513_TESTMODE_CMD)
+            if self.command_version == makita.F0513:
+                self.interface.request(makita.F0513_TESTMODE_CMD)
             else:
-                self.interface.request(TESTMODE_CMD)
+                self.interface.request(makita.TESTMODE_CMD)
 
-            self.interface.request(LEDS_OFF_CMD)
-
+            self.interface.request(makita.LEDS_OFF_CMD)
         except ConnectionError as e:
-            tk.messagebox.showerror("Connection Error", f"Lost communication while turning LEDs off:\n\n{e}")
+            messagebox.showerror("Connection Error",
+                                 "Lost communication while turning LEDs off:\n\n%s" % e)
         except Exception as e:
-            tk.messagebox.showerror("Error", f"Failed to turn LEDs off:\n\n{type(e).__name__}: {e}")
+            messagebox.showerror("Error", "Failed to turn LEDs off:\n\n%s: %s"
+                                 % (type(e).__name__, e))
 
     def on_reset_errors_click(self):
-        if not self.interface:
-            tk.messagebox.showerror("Error", "No interface selected. Please select and connect an interface from the sidebar.")
+        if not self._check_interface():
             return
 
         try:
-            self.interface.request(TESTMODE_CMD)
-            self.interface.request(RESET_ERROR_CMD)
-
+            self.interface.request(makita.TESTMODE_CMD)
+            self.interface.request(makita.RESET_ERROR_CMD)
         except ConnectionError as e:
-            tk.messagebox.showerror("Connection Error", f"Lost communication while resetting errors:\n\n{e}")
+            messagebox.showerror("Connection Error",
+                                 "Lost communication while resetting errors:\n\n%s" % e)
         except Exception as e:
-            tk.messagebox.showerror("Error", f"Failed to reset errors:\n\n{type(e).__name__}: {e}")
+            messagebox.showerror("Error", "Failed to reset errors:\n\n%s: %s"
+                                 % (type(e).__name__, e))
 
     def on_reset_message_click(self):
-        if not self.interface:
-            tk.messagebox.showerror("Error", "No interface selected. Please select and connect an interface from the sidebar.")
+        if not self._check_interface():
             return
 
-        try:
-            # TODO: Replace clean frame with the frame from the battery.
-            # 1. Read frame
-            # 2. set nibble 0
-            # 3. write as usual
-            tk.messagebox.showwarning("Not Implemented", "This feature is currently under development.")
-            return
+        # TODO: Replace clean frame with the frame from the battery.
+        # 1. Read frame
+        # 2. set nibble 0
+        # 3. write as usual
+        messagebox.showwarning("Not Implemented", "This feature is currently under development.")
 
-            self.interface.request(TESTMODE_CMD)
-            self.interface.request(CHARGER_CMD)
-            self.interface.request(CLEAN_FRAME_CMD)
-            self.interface.request(STORE_CMD)
-
-        except ConnectionError as e:
-            tk.messagebox.showerror("Connection Error", f"Lost communication while resetting battery message:\n\n{e}")
-        except Exception as e:
-            tk.messagebox.showerror("Error", f"Failed to reset battery message:\n\n{type(e).__name__}: {e}")
-
+    # ------------------------------------------------------------------
     def insert_battery_data(self, data):
         for idx, (parameter, value) in enumerate(data.items()):
             item_id = None
@@ -395,9 +355,9 @@ class ModuleApplication(tk.Frame):
 
         rows = []
         for item in selected_items:
+            parameter = self.tree.item(item, 'text')
             values = self.tree.item(item, 'values')
-            row_text = '\t'.join(values)
-            rows.append(row_text)
+            rows.append('\t'.join([parameter] + [str(value) for value in values]))
 
         self.parent.clipboard_clear()
         self.parent.clipboard_append('\n'.join(rows))

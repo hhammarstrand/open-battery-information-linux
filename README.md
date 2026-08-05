@@ -1,7 +1,7 @@
 # OBI Linux
 
-**OBI Linux** is a Linux port of [Open Battery Information][upstream]
-(OBI) — tools and information about various batteries to aid in repair.
+**OBI Linux** is a Linux port of [Open Battery Information][upstream] (OBI) —
+tools and information about various batteries in order to aid repair.
 
 It is very common for manufacturers to lock the BMS when a fault is detected
 to protect the device and the user. Very important feature! So when is it a
@@ -14,104 +14,125 @@ This is the problem we would like to solve!
 
 ![screenshot](docs/images/obi-1.png)
 
-> **About this fork:** The upstream project ships Windows and macOS builds.
-> This fork adds first-class support for **Pop!_OS, Ubuntu, and Debian** —
-> a PyInstaller spec for Linux, a CI workflow that produces a tarball
-> release, a `.desktop` file, a `udev` rule for the Arduino serial adapter,
-> and an `install.sh` script. The application code itself is the same
-> cross-platform Python/Tk codebase from upstream, with a small path-handling
-> fix so it works when launched from a desktop entry.
+> **About this fork.** Upstream ships Windows and macOS builds. This fork adds
+> first-class support for **Pop!_OS, Ubuntu, Linux Mint and Debian**, and adds
+> **logging a battery over time** to both the app and a new headless CLI.
+> See **[docs/LINUX.md](docs/LINUX.md)** for the full Linux guide.
 
 [upstream]: https://github.com/mnh-jansson/open-battery-information
 
 ---
 
-## Step 1: Set Up ArduinoOBI
+## Quick start
 
-1. Navigate to the `ArduinoOBI` folder in the project directory.
-2. Follow the instructions in its `README.md` to flash the Arduino with
-   the OBI firmware.
+### 1. Flash the adapter
 
-## Step 2: Install OBI Linux
+Follow [`ArduinoOBI/README.md`](ArduinoOBI/README.md). An Arduino Uno/Nano or
+an ESP32-C3 plus a few resistors is all the hardware you need.
 
-You have three options.
-
-### Option A — Precompiled binary for Pop!_OS / Ubuntu / Debian (recommended)
-
-A standalone `x86_64` binary is built by CI and attached to every tagged
-release as `obi-linux-x86_64.tar.gz`.
+### 2. Install OBI Linux
 
 ```bash
 tar -xzf obi-linux-x86_64.tar.gz
-cd obi-linux-pkg
+cd obi-linux-x86_64
 sudo ./install.sh
 ```
 
-`install.sh` will:
+The installer puts `obi-linux` (desktop app) and `obi-log` (command line
+logger) in `/usr/local/bin`, adds a menu entry, and installs a udev rule so
+the adapter works without `sudo`. Log out and back in once, then launch **OBI
+Linux** from your application menu.
 
-- install the binary as `/usr/local/bin/obi-linux`
-- install the `.desktop` file and icon so OBI Linux appears in your
-  application menu
-- install a `udev` rule that makes the Arduino USB-serial adapter
-  accessible without `sudo`
-- add your user to the `plugdev` group
+Prefer running from source, or on another platform? See
+[docs/LINUX.md](docs/LINUX.md#install); Windows `.exe` and macOS `.dmg` builds
+are attached to tagged releases as well.
 
-Log out and back in once, then launch **OBI Linux** from your application
-menu (or run `obi-linux` from a terminal).
+### 3. Read a battery
 
-### Option B — Precompiled binary for Windows / macOS
+Pick the interface and port in the sidebar, press **Connect**, choose the
+**Makita LXT** module, then **Read battery model** and **Read battery data**.
 
-Tagged releases also include a Windows `.exe` and a macOS `.dmg`. Download
-the file for your platform from the Releases page and run it.
+---
 
-### Option C — Run from source (any platform)
+## Logging a battery over time
+
+New in this fork. Voltages, cell delta and temperatures are appended to a CSV
+(or JSON Lines) file at a fixed interval, so you can watch a pack drain, warm
+up, or drift apart.
+
+**In the app:** the *Data logging (over time)* panel under the readings table.
+Set an interval, press **Start logging**. It runs on a background thread and
+flushes every row to disk, so you can keep using the app while it records.
+
+**From the terminal:**
 
 ```bash
-git clone https://github.com/hhammarstrand/open-battery-information-linux
-cd open-battery-information-linux/OpenBatteryInformation
-pip install -r requirements.txt
-python main.py
+obi-log --list-ports                     # what is connected?
+obi-log --once                           # a single reading
+obi-log --interval 60 --duration 8h      # log for eight hours
+obi-log --interval 30 --out ~/pack1.csv --include-status --append
 ```
 
-On Pop!_OS / Ubuntu / Debian, also install the system Tk package (it is not
-provided by pip):
+**Unattended:** a systemd user service template is included in
+[`linux/obi-log.service`](linux/obi-log.service).
+
+Every row carries a timestamp, the elapsed time, the pack and cell voltages,
+the cell delta and the temperatures — plus an `error` column, so a failed
+sample shows up as a visible gap rather than disappearing. Columns are
+documented in [docs/LINUX.md](docs/LINUX.md#what-ends-up-in-the-file).
+
+---
+
+## No hardware? Try the simulator
 
 ```bash
-sudo apt install python3-tk
-```
-
-To get serial port access without running as root, either install the
-`udev` rule (`sudo cp linux/90-arduino-obi.rules /etc/udev/rules.d/ && sudo
-udevadm control --reload-rules && sudo udevadm trigger`) or add yourself to
-the `dialout` group (`sudo usermod -aG dialout $USER`) and re-login.
-
-## Building the Linux binary locally
-
-```bash
-sudo apt install python3-tk tk-dev binutils
 cd OpenBatteryInformation
-pip install pyinstaller -r requirements.txt
-pyinstaller obi-linux.spec
-# binary will be in dist/obi-linux
-sudo ../linux/install.sh   # optional: install system-wide
+python3 tools/fake_adapter.py --drain 5     # prints a /dev/pts/N path
+OBI_EXTRA_PORTS=/dev/pts/5 python3 main.py  # the app can now talk to it
 ```
+
+It emulates an adapter with a slowly draining pack, including the locked,
+faulty and F0513 variants — handy for trying the logger or developing new
+modules.
 
 ---
 
 ## Supported batteries
 
-- Makita LXT (5-cell packs, both standard and F0513 variants)
+- Makita LXT, 5-cell packs: standard and F0513 (diagnostics-only) command sets
 
-Module support is identical to upstream OBI; new modules and interfaces are
-loaded dynamically from `OpenBatteryInformation/modules/` and
-`OpenBatteryInformation/interfaces/`.
+Modules and interfaces are loaded dynamically from
+`OpenBatteryInformation/modules/` and `OpenBatteryInformation/interfaces/`, so
+adding a new battery family means adding one file. The protocol and decoding
+live in `OpenBatteryInformation/core/`, free of any GUI dependency, and are
+covered by tests that need no hardware (`make test`).
+
+---
+
+## What this fork changes
+
+- Linux packaging: PyInstaller specs, CI, `.desktop` entry, icon, installer
+- udev rules for Arduino/FTDI/CH340/CP210x/PL2303/ESP32, including telling
+  ModemManager to leave the adapter alone
+- Serial port picker that hides built-in UARTs, prefers stable
+  `/dev/serial/by-id` paths, and explains permission problems instead of
+  failing silently
+- Time-series logging: in-app panel, `obi-log` CLI, systemd unit
+- Longer default serial timeout and a boot wait, so the first read after
+  connecting no longer fails on the slower command paths
+- Automatic reconnect when the adapter re-enumerates during a long log
+- A pty-based adapter simulator, and a test suite that runs without hardware
+- Resource paths resolved from the executable, so launching from a menu entry
+  works
+
+---
 
 ## Credits and acknowledgements
 
-OBI Linux is built on top of [Open Battery Information][upstream] by Martin
-Jansson. All battery-protocol reverse engineering and the original
-application architecture are his work. If you find OBI Linux useful,
-please consider supporting the upstream author:
+OBI Linux builds on [Open Battery Information][upstream] by Martin Jansson.
+All battery protocol reverse engineering and the original application
+architecture are his work. If you find OBI Linux useful, please consider
+supporting the upstream author:
 
 - Contact the upstream author: openbatteryinformation@gmail.com
 - [Buy the upstream author a coffee](https://www.buymeacoffee.com/mnhjansson)
@@ -120,5 +141,12 @@ please consider supporting the upstream author:
 
 ## License
 
-MIT. The original upstream copyright is preserved in `LICENSE.md` together
-with the copyright for the Linux-fork changes.
+MIT. The upstream copyright is preserved in [`LICENSE.md`](LICENSE.md)
+alongside the copyright for the Linux fork changes.
+
+## Safety
+
+Working on battery packs means working with stored energy. Shorting a pack,
+puncturing a cell or reviving a pack that is genuinely faulty can cause fire.
+Clearing an error code does not repair the fault that set it — diagnose first,
+and if the pack is damaged, recycle it.
